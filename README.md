@@ -1,109 +1,127 @@
 # NetworkEdgeTap
-an all-in-one network monitoring VM at the edge of a network to passively observe traffic between WAN and LAN, visualize flows, and prepare for IDS integration (Suricata/Zeek).
 
-Inline Network Monitoring Lab — Setup Documentation
-Project Goal
+**An all-in-one network monitoring VM at the edge of a network to passively observe traffic between WAN and LAN, visualize flows, and prepare for IDS integration (Suricata/Zeek).**
 
-Set up an all-in-one network monitoring VM at the edge of a network to passively observe traffic between WAN and LAN, visualize flows, and prepare for IDS integration (Suricata/Zeek).
+---
 
-Hardware Used
+## Inline Network Monitoring Lab — Setup Documentation
 
-Lenovo ThinkCentre M910x Mini PC
+### Project Goal
 
-Intel I350 4-port Gigabit NIC (used for WAN/LAN and monitoring)
+Set up a single VM at the network edge to:
 
-Home/Enterprise router and modem (for traffic source)
+- Passively observe traffic between WAN and LAN  
+- Visualize network flows  
+- Prepare for IDS integration with tools like Suricata and Zeek  
 
-Proxmox installed on local storage
+---
 
-Software Used
+## Hardware Used
 
-Proxmox VE (virtualization host)
+- Lenovo ThinkCentre M910x Mini PC  
+- Intel I350 4-port Gigabit NIC (used for WAN/LAN and monitoring)  
+- Home/Enterprise router and modem (traffic source)  
+- Proxmox VE installed on local storage  
 
-Ubuntu 24.04.3 LTS VM (base for monitoring)
+---
 
-Docker + Docker Compose for containerized tools
+## Software Used
 
-ntopng container for network traffic visualization
+- Proxmox VE (virtualization host)  
+- Ubuntu 24.04.3 LTS VM (base for monitoring)  
+- Docker + Docker Compose for containerized tools  
+- ntopng container for network traffic visualization  
 
-Steps Completed
-1. Install Proxmox
+---
 
-Download Proxmox VE ISO from Proxmox Download
-.
+## Steps Completed
 
-Boot the Mini PC from USB and install Proxmox to the internal storage.
+### 1. Install Proxmox
 
-Configure networking for management interface (vmbr0) during installation.
+1. Download the Proxmox VE ISO from [Proxmox Download](https://www.proxmox.com/en/downloads)  
+2. Boot the Mini PC from USB and install Proxmox to internal storage.  
+3. Configure networking for the management interface (`vmbr0`) during installation.  
 
-2. Create Ubuntu VM
+---
 
-In Proxmox Web GUI, create a new VM.
+### 2. Create Ubuntu VM
 
-Assign minimal resources for monitoring VM:
+1. In Proxmox Web GUI, create a new VM.  
+2. Assign minimal resources:
+   - **CPU:** 1 core  
+   - **Memory:** 2 GB  
+   - **Disk:** 12 GB  
+3. Set OSType: Linux 64-bit.  
+4. Boot from ISO or prebuilt Ubuntu template.  
+5. **Do not boot the VM yet** — network configuration comes next.  
 
-CPU: 1 core
+---
 
-Memory: 2 GB
+### 3. Configure Host Bridges in Proxmox
 
-Disk: 12 GB
+- **vmbr0:** Management bridge (Proxmox host + VM SSH access)  
+- **vmbr1 (planned):** Inline bridge connecting WAN/LAN NICs  
 
-Set OSType: Linux 64-bit and boot from ISO or prebuilt Ubuntu template.
+Example configuration in `/etc/network/interfaces`:
 
-Do not boot the VM yet until network configuration is ready.
-
-3. Configure Host Bridges in Proxmox
-
-vmbr0: Management bridge (Proxmox host + VM SSH access)
-
-vmbr1 (planned): Inline bridge connecting WAN/LAN NICs
-
-Example:
+```text
 auto vmbr1
 iface vmbr1 inet manual
     bridge-ports enp1s0f0 enp1s0f1
     bridge-stp off
     bridge-fd 0
+```
 
+- **enp1s0f0 → WAN**  
+- **enp1s0f1 → LAN**  
+- This bridge is passive and will mirror traffic into the VM.  
+- **Note:** Physical cables are not connected at this stage.  
 
-enp1s0f0 → WAN
+---
 
-enp1s0f1 → LAN
+### 4. Assign Network Interfaces to VM
 
-The bridge is passive, allows traffic to be mirrored into the VM.
+- **VM net0:** Management → `vmbr0`  
+- **VM net1:** Monitor → `vmbr1`  
 
-No cables were physically connected at this stage — we only configured logical bridging.
+Example in `100.conf`:
 
-4. Assign Network Interfaces to VM
+```text
+net0: virtio=<MAC>,bridge=vmbr0
+net1: virtio=<MAC>,bridge=vmbr1
+```
 
-VM net0: Management interface → connected to vmbr0
+After boot, configure monitor interface in the VM:
 
-VM net1: Monitor interface → connected to vmbr1
-
-net0: virtio=MAC,bridge=vmbr0
-net1: virtio=MAC,bridge=vmbr1,promisc=1
-
-
-Promiscuous mode is enabled manually in the VM after boot:
-
+```bash
 sudo ip link set monitor0 up
 sudo ip link set monitor0 promisc on
+```
 
-5. Install Docker & Docker Compose in VM
+---
+
+### 5. Install Docker & Docker Compose
+
+```bash
 sudo apt update
 sudo apt install -y docker.io docker-compose
 sudo systemctl enable docker
 sudo systemctl start docker
+```
 
-6. Deploy ntopng Docker Container
+---
 
-Create project folder:
+### 6. Deploy ntopng Docker Container
 
+1. Create project folder:
+
+```bash
 mkdir ~/ntop && cd ~/ntop
+```
 
+2. Create `docker-compose.yml`:
 
-Create docker-compose.yml:
-
+```yaml
 version: '3'
 services:
   ntopng:
@@ -114,46 +132,55 @@ services:
     volumes:
       - ./ntopng-data:/data
     command: ["-i", "monitor0", "-w", "3000", "-m", "192.168.1.0/24"]
+```
 
+3. Start container:
 
-Start container:
-
+```bash
 sudo docker-compose up -d
+```
 
+4. Verify:
 
-Verify:
-
+```bash
 sudo docker ps
+```
 
+5. Access UI from browser:
 
-Access UI from browser:
-
+```
 http://<VM-IP>:3000
+```
 
+- Default credentials: `admin/admin` — **change immediately**  
 
-Default credentials: admin/admin
+---
 
-Change password immediately
+### 7. Verification (Without Cables)
 
-7. Verification (Without Cables)
+1. Confirm VM sees two interfaces:
 
-Confirm VM sees two interfaces:
-
+```bash
 ip link show
+```
 
+2. Confirm management interface has IP and monitor interface is UP & promiscuous:
 
-Confirm management interface has IP and monitor interface is UP & promiscuous:
-
+```bash
 ip addr
 sudo ip link set monitor0 promisc on
+```
 
+- The ntopng container is running and ready to capture traffic once WAN/LAN are connected.  
 
-ntopng container is running and ready to capture traffic once WAN/LAN are connected.
+---
 
-Notes
+## Notes
 
-Physical cables will be connected later in the lab.
+- Physical cables will be connected later in the lab.  
+- Current setup allows full passive monitoring on a single VM.  
+- Additional tools (Suricata, Zeek) can be added to the same VM for IDS capabilities.
+```
 
-Current setup allows full passive monitoring on a single VM.
+I can make this a downloadable `.md` file for you next. Do you want me to do that?
 
-Additional tools (Suricata, Zeek) can be added to the same VM for IDS capabilities.
