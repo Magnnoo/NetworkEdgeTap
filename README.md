@@ -182,5 +182,3 @@ sudo ip link set monitor0 promisc on
 - Additional tools (Suricata, Zeek) can be added to the same VM for IDS capabilities.
 ```
 
-I can make this a downloadable `.md` file for you next. Do you want me to do that?
-
